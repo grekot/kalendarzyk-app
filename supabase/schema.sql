@@ -49,6 +49,8 @@ create table public.profiles (
   owner_id uuid not null references public.users(id) on delete cascade,
   name text not null,
   photo_url text,
+  ovulation_uncertainty smallint not null default 1
+    check (ovulation_uncertainty between 0 and 3),
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
@@ -61,6 +63,7 @@ create index profiles_owner_idx on public.profiles(owner_id);
 create table public.profile_shares (
   profile_id uuid not null references public.profiles(id) on delete cascade,
   user_id uuid not null references public.users(id) on delete cascade,
+  role text not null default 'editor' check (role in ('editor', 'viewer')),
   granted_at timestamptz not null default now(),
   primary key (profile_id, user_id)
 );
@@ -93,6 +96,7 @@ create table public.invites (
   code text primary key,
   profile_id uuid not null references public.profiles(id) on delete cascade,
   created_by uuid not null references public.users(id),
+  role text not null default 'editor' check (role in ('editor', 'viewer')),
   expires_at timestamptz not null,
   created_at timestamptz not null default now()
 );
@@ -136,6 +140,22 @@ set search_path = public
 as $$
   select public.is_profile_owner(p_profile, p_user)
       or public.has_profile_share(p_profile, p_user);
+$$;
+
+create or replace function public.user_can_edit_profile(p_profile uuid, p_user uuid)
+returns boolean
+language sql
+security definer
+stable
+set search_path = public
+as $$
+  select exists(
+    select 1 from public.profiles
+    where id = p_profile and owner_id = p_user
+  ) or exists(
+    select 1 from public.profile_shares
+    where profile_id = p_profile and user_id = p_user and role = 'editor'
+  );
 $$;
 
 -- ─────────────────────────────────────────────────────────────
@@ -196,6 +216,13 @@ create policy shares_insert on public.profile_shares
     public.is_profile_owner(profile_shares.profile_id, auth.uid())
   );
 
+create policy shares_update on public.profile_shares
+  for update using (
+    public.is_profile_owner(profile_shares.profile_id, auth.uid())
+  ) with check (
+    public.is_profile_owner(profile_shares.profile_id, auth.uid())
+  );
+
 create policy shares_delete on public.profile_shares
   for delete using (
     public.is_profile_owner(profile_shares.profile_id, auth.uid())
@@ -207,13 +234,13 @@ create policy cycles_select on public.cycles
   for select using (public.user_can_access_profile(cycles.profile_id, auth.uid()));
 
 create policy cycles_insert on public.cycles
-  for insert with check (public.user_can_access_profile(cycles.profile_id, auth.uid()));
+  for insert with check (public.user_can_edit_profile(cycles.profile_id, auth.uid()));
 
 create policy cycles_update on public.cycles
-  for update using (public.user_can_access_profile(cycles.profile_id, auth.uid()));
+  for update using (public.user_can_edit_profile(cycles.profile_id, auth.uid()));
 
 create policy cycles_delete on public.cycles
-  for delete using (public.user_can_access_profile(cycles.profile_id, auth.uid()));
+  for delete using (public.user_can_edit_profile(cycles.profile_id, auth.uid()));
 
 -- INVITES: czyta każdy zalogowany (potrzebne do realizacji kodu); tworzy owner
 -- profilu; kasuje owner lub gdy wygasł.

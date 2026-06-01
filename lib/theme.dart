@@ -58,4 +58,8 @@ class AppTheme {
 class CycleColors {
   static const Color period = Color(0xFFD81B60);
   static const Color predicted = Color(0xFFF9A825);
+  static const Color today = Color(0xFF90CAF9);   // Material Blue 200 — jasnoniebieski
+  static const Color onToday = Color(0xFF0D47A1); // Material Blue 900 — ciemny tekst na niebieskim
+  static const Color fertile = Color(0xFFA5D6A7);   // Material Green 200 — okno płodne
+  static const Color ovulation = Color(0xFF388E3C); // Material Green 700 — owulacja
 }

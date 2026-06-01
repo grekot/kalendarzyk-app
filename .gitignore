@@ -49,3 +49,8 @@ app.*.map.json
 
 # Testowe eksporty JSON które nie powinny iść do repo
 kalendazyk_backup_*.json
+
+# Release keystore i jego sekrety — NIGDY do repo
+android/release.keystore
+android/key.properties
+android/release.keystore.base64

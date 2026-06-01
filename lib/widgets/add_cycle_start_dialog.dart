@@ -7,8 +7,10 @@ import '../providers/providers.dart';
 class AddCycleStartDialog extends ConsumerWidget {
   const AddCycleStartDialog({super.key});
 
-  static Future<void> show(BuildContext context) async {
-    await showDialog<void>(
+  /// Zwraca dodaną datę gdy user pomyślnie zapisze cykl,
+  /// `null` gdy anuluje lub coś pójdzie nie tak.
+  static Future<DateTime?> show(BuildContext context) {
+    return showDialog<DateTime>(
       context: context,
       builder: (_) => const AddCycleStartDialog(),
     );
@@ -27,7 +29,7 @@ class AddCycleStartDialog extends ConsumerWidget {
     try {
       await ref.read(cycleRepositoryProvider).addStart(activeId, date);
       if (context.mounted) {
-        Navigator.of(context).pop();
+        Navigator.of(context).pop(date);
         _showAddedSnack(context, date);
       }
     } catch (e) {

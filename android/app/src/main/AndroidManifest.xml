@@ -1,4 +1,8 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- Wymagane dla zapytań do Supabase (Auth + Database + Storage) -->
+    <uses-permission android:name="android.permission.INTERNET" />
+    <!-- Wymagane do instalacji nowego APK z poziomu apki (auto-update z GitHub Releases) -->
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
     <application
         android:label="Kalendarzyk"
         android:name="${applicationName}"
@@ -23,6 +27,13 @@
             <intent-filter>
                 <action android:name="android.intent.action.MAIN"/>
                 <category android:name="android.intent.category.LAUNCHER"/>
+            </intent-filter>
+            <!-- Deep link dla Supabase OAuth callback po sign-in Google -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="kalendarzyk" android:host="login-callback" />
             </intent-filter>
         </activity>
         <!-- Don't delete the meta-data below.

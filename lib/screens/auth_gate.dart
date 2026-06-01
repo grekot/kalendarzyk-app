@@ -1,37 +1,31 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../data/migration_service.dart';
 import '../providers/providers.dart';
 import 'home_screen.dart';
 import 'onboarding_screen.dart';
+import 'sign_in_screen.dart';
 
 /// Bramka uruchomieniowa:
-///   1. Anonymous sign-in (jeśli brak sesji).
-///   2. Migracja Hive → Supabase (jednorazowa).
-///   3. Onboarding: jeśli displayName pusty.
-///   4. HomeScreen.
-class AuthGate extends ConsumerStatefulWidget {
+///   1. Brak sesji → SignInScreen (Google OAuth).
+///   2. Sesja jest, ale displayName pusty → OnboardingScreen.
+///   3. Wszystko gotowe → HomeScreen.
+///
+/// Po zmianach auth (sign-in / sign-out) `currentUserIdProvider`
+/// emituje nową wartość, AuthGate sam się przerenderuje.
+class AuthGate extends ConsumerWidget {
   const AuthGate({super.key});
 
   @override
-  ConsumerState<AuthGate> createState() => _AuthGateState();
-}
+  Widget build(BuildContext context, WidgetRef ref) {
+    final userAsync = ref.watch(currentUserIdProvider);
 
-class _AuthGateState extends ConsumerState<AuthGate> {
-  Future<void>? _bootstrap;
-
-  @override
-  Widget build(BuildContext context) {
-    _bootstrap ??= _initialize();
-    return FutureBuilder<void>(
-      future: _bootstrap,
-      builder: (context, snap) {
-        if (snap.connectionState != ConnectionState.done) {
-          return const _Splash();
-        }
-        if (snap.hasError) {
-          return _ErrorScreen(error: snap.error!);
+    return userAsync.when(
+      loading: () => const _Splash(),
+      error: (e, _) => _ErrorScreen(error: e),
+      data: (userId) {
+        if (userId == null) {
+          return const SignInScreen();
         }
         final displayNameAsync = ref.watch(displayNameProvider);
         return displayNameAsync.when(
@@ -46,21 +40,6 @@ class _AuthGateState extends ConsumerState<AuthGate> {
         );
       },
     );
-  }
-
-  Future<void> _initialize() async {
-    final auth = ref.read(authServiceProvider);
-    await auth.ensureSignedIn();
-    final migration = MigrationService(
-      ref.read(supabaseClientProvider),
-      ref.read(personRepositoryProvider),
-      ref.read(cycleRepositoryProvider),
-    );
-    try {
-      await migration.migrateIfNeeded();
-    } catch (_) {
-      // Migracja best-effort — w razie czego dane lokalne zostają w Hive.
-    }
   }
 }
 

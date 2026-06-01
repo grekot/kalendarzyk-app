@@ -1,4 +1,5 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../data/auth_service.dart';
@@ -82,3 +83,35 @@ final cyclesProvider = StreamProvider<List<DateTime>>((ref) {
   if (id == null) return const Stream<List<DateTime>>.empty();
   return ref.watch(cycleRepositoryProvider).watch(id);
 });
+
+// ─── ustawienia lokalne (per urządzenie, shared_preferences) ────
+
+class ShowFertilityNotifier extends StateNotifier<bool> {
+  ShowFertilityNotifier() : super(true) {
+    _load();
+  }
+
+  static const String _key = 'show_fertility';
+
+  Future<void> _load() async {
+    final prefs = await SharedPreferences.getInstance();
+    final v = prefs.getBool(_key);
+    if (v != null && v != state) state = v;
+  }
+
+  Future<void> set(bool value) async {
+    if (value == state) return;
+    state = value;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_key, value);
+  }
+
+  Future<void> toggle() => set(!state);
+}
+
+/// Flag wł/wył wyświetlanie okna płodnego i owulacji w UI.
+/// Per-urządzenie (lokalne `SharedPreferences`), domyślnie włączone.
+final showFertilityProvider =
+    StateNotifierProvider<ShowFertilityNotifier, bool>(
+  (ref) => ShowFertilityNotifier(),
+);

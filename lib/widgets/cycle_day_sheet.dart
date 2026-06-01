@@ -22,6 +22,10 @@ class CycleDaySheet extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final fmt = DateFormat('EEEE, d MMMM yyyy', 'pl_PL');
+    final activePerson = ref.watch(activePersonProvider);
+    final myId = ref.watch(currentUserIdProvider).valueOrNull;
+    final canEdit = activePerson?.canEdit(myId) ?? false;
+
     return SafeArea(
       child: Padding(
         padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
@@ -35,14 +39,25 @@ class CycleDaySheet extends ConsumerWidget {
             ),
             const SizedBox(height: 4),
             Text(
-              'Zaznaczony start cyklu',
+              canEdit
+                  ? 'Zaznaczony start cyklu'
+                  : 'Zaznaczony start cyklu (tylko podgląd)',
               style: Theme.of(context).textTheme.bodySmall,
             ),
-            const SizedBox(height: 16),
-            FilledButton.tonalIcon(
-              icon: const Icon(Icons.edit_calendar),
-              label: const Text('Zmień datę'),
-              onPressed: () async {
+            if (!canEdit)
+              Padding(
+                padding: const EdgeInsets.only(top: 16),
+                child: OutlinedButton(
+                  onPressed: () => Navigator.of(context).pop(),
+                  child: const Text('Zamknij'),
+                ),
+              ),
+            if (canEdit) ...[
+              const SizedBox(height: 16),
+              FilledButton.tonalIcon(
+                icon: const Icon(Icons.edit_calendar),
+                label: const Text('Zmień datę'),
+                onPressed: () async {
                 final picked = await _pickDate(context, date);
                 if (picked == null) return;
                 final id = _activeProfileId(ref);
@@ -88,6 +103,7 @@ class CycleDaySheet extends ConsumerWidget {
                 }
               },
             ),
+            ],
           ],
         ),
       ),

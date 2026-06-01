@@ -4,6 +4,7 @@ import 'package:table_calendar/table_calendar.dart';
 
 import '../data/cycle_repository.dart';
 import '../data/cycle_stats.dart';
+import '../models/person.dart';
 import '../providers/providers.dart';
 import '../theme.dart';
 import '../widgets/cycle_day_sheet.dart';
@@ -31,12 +32,49 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
     final starts = cyclesAsync.valueOrNull ?? const <DateTime>[];
     final startsSet = starts.map(dateOnly).toSet();
     final predicted = CycleStats.predictedNextStart(starts);
+    final showFertility = ref.watch(showFertilityProvider);
+    final activePerson = ref.watch(activePersonProvider);
+    final uncert = activePerson?.ovulationUncertainty ??
+        Person.defaultOvulationUncertainty;
+    final fertile = showFertility
+        ? CycleStats.predictedFertileWindow(
+            starts,
+            ovulationUncertainty: uncert,
+          )
+        : null;
+    final ovulationWindow = showFertility
+        ? CycleStats.predictedOvulationWindow(
+            starts,
+            ovulationUncertainty: uncert,
+          )
+        : null;
+    final fertileStart = fertile != null ? dateOnly(fertile.start) : null;
+    final fertileEnd = fertile != null ? dateOnly(fertile.end) : null;
+    final ovulStart =
+        ovulationWindow != null ? dateOnly(ovulationWindow.start) : null;
+    final ovulEnd =
+        ovulationWindow != null ? dateOnly(ovulationWindow.end) : null;
     final today = dateOnly(DateTime.now());
     final now = DateTime.now();
 
     return Scaffold(
       appBar: AppBar(
         title: const Text('Kalendarz cykli'),
+        actions: [
+          IconButton(
+            tooltip: showFertility
+                ? 'Ukryj prognozę dni płodnych'
+                : 'Pokaż prognozę dni płodnych',
+            icon: Icon(
+              showFertility
+                  ? Icons.local_florist
+                  : Icons.local_florist_outlined,
+              color: showFertility ? CycleColors.ovulation : null,
+            ),
+            onPressed: () =>
+                ref.read(showFertilityProvider.notifier).toggle(),
+          ),
+        ],
       ),
       body: SafeArea(
         child: Column(
@@ -71,12 +109,12 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
                     }
                   },
                   calendarStyle: CalendarStyle(
-                    todayDecoration: BoxDecoration(
-                      color: Theme.of(context).colorScheme.primaryContainer,
+                    todayDecoration: const BoxDecoration(
+                      color: CycleColors.today,
                       shape: BoxShape.circle,
                     ),
-                    todayTextStyle: TextStyle(
-                      color: Theme.of(context).colorScheme.onPrimaryContainer,
+                    todayTextStyle: const TextStyle(
+                      color: CycleColors.onToday,
                       fontWeight: FontWeight.w600,
                     ),
                     selectedDecoration: BoxDecoration(
@@ -94,6 +132,60 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
                     ),
                   ),
                   calendarBuilders: CalendarBuilders(
+                    defaultBuilder: (context, day, focusedDay) {
+                      final d = dateOnly(day);
+                      // Okno owulacji (±2 dni) — pełne ciemnozielone kółko
+                      if (ovulStart != null &&
+                          ovulEnd != null &&
+                          !d.isBefore(ovulStart) &&
+                          !d.isAfter(ovulEnd)) {
+                        return Center(
+                          child: Container(
+                            width: 36,
+                            height: 36,
+                            decoration: const BoxDecoration(
+                              color: CycleColors.ovulation,
+                              shape: BoxShape.circle,
+                            ),
+                            alignment: Alignment.center,
+                            child: Text(
+                              '${day.day}',
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ),
+                        );
+                      }
+                      // Okno płodne (poza owulacją) — jasnozielone obramowanie
+                      if (fertileStart != null &&
+                          fertileEnd != null &&
+                          !d.isBefore(fertileStart) &&
+                          !d.isAfter(fertileEnd)) {
+                        return Center(
+                          child: Container(
+                            width: 36,
+                            height: 36,
+                            decoration: BoxDecoration(
+                              shape: BoxShape.circle,
+                              border: Border.all(
+                                color: CycleColors.fertile,
+                                width: 2,
+                              ),
+                            ),
+                            alignment: Alignment.center,
+                            child: Text(
+                              '${day.day}',
+                              style: const TextStyle(
+                                fontWeight: FontWeight.w500,
+                              ),
+                            ),
+                          ),
+                        );
+                      }
+                      return null;
+                    },
                     markerBuilder: (context, day, events) {
                       if (events.isEmpty) return null;
                       return Container(
@@ -119,7 +211,7 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
               ),
             ),
             const SizedBox(height: 8),
-            const _Legend(),
+            _Legend(showFertility: showFertility, uncertainty: uncert),
             const SizedBox(height: 8),
             Expanded(
               child: ListView(
@@ -142,10 +234,15 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
 }
 
 class _Legend extends StatelessWidget {
-  const _Legend();
+  const _Legend({required this.showFertility, required this.uncertainty});
+  final bool showFertility;
+  final int uncertainty;
 
   @override
   Widget build(BuildContext context) {
+    final ovulationLabel = uncertainty == 0
+        ? 'Owulacja'
+        : 'Owulacja (±$uncertainty ${uncertainty == 1 ? "dzień" : "dni"})';
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16),
       child: Wrap(
@@ -154,6 +251,11 @@ class _Legend extends StatelessWidget {
         children: [
           _legendItem(context, CycleColors.period, 'Start cyklu', filled: true),
           _legendItem(context, CycleColors.predicted, 'Przewidywany start', filled: false),
+          _legendItem(context, CycleColors.today, 'Dzisiaj', filled: true),
+          if (showFertility) ...[
+            _legendItem(context, CycleColors.fertile, 'Okno płodne', filled: false),
+            _legendItem(context, CycleColors.ovulation, ovulationLabel, filled: true),
+          ],
         ],
       ),
     );

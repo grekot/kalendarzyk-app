@@ -101,6 +101,13 @@ class ProfilesScreen extends ConsumerWidget {
                       ),
                       if (mine) ...[
                         IconButton(
+                          tooltip:
+                              'Margines błędu owulacji (±${p.ovulationUncertainty} ${p.ovulationUncertainty == 1 ? "dzień" : "dni"})',
+                          icon: const Icon(Icons.tune),
+                          onPressed: () =>
+                              _changeUncertainty(context, ref, p),
+                        ),
+                        IconButton(
                           tooltip: 'Udostępnij',
                           icon: const Icon(Icons.share_outlined),
                           onPressed: () {
@@ -163,6 +170,79 @@ class ProfilesScreen extends ConsumerWidget {
       await ref.read(personRepositoryProvider).rename(person.id, name);
     } catch (e) {
       if (context.mounted) _showError(context, 'Nie udało się: $e');
+    }
+  }
+
+  Future<void> _changeUncertainty(
+      BuildContext context, WidgetRef ref, Person person) async {
+    final picked = await showDialog<int>(
+      context: context,
+      builder: (dialogContext) {
+        var selected = person.ovulationUncertainty;
+        return StatefulBuilder(
+          builder: (sbContext, setState) {
+            return AlertDialog(
+              title: const Text('Margines błędu owulacji'),
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Określa o ile dni rzeczywista owulacja może odbiegać '
+                    'od średniej statystycznej. Dla cykli regularnych — niżej; '
+                    'dla nieregularnych — wyżej. Szersze okno = bardziej '
+                    'konserwatywne dni płodne.',
+                    style: Theme.of(sbContext).textTheme.bodySmall,
+                  ),
+                  const SizedBox(height: 16),
+                  Center(
+                    child: SegmentedButton<int>(
+                      segments: const [
+                        ButtonSegment(value: 0, label: Text('±0')),
+                        ButtonSegment(value: 1, label: Text('±1')),
+                        ButtonSegment(value: 2, label: Text('±2')),
+                        ButtonSegment(value: 3, label: Text('±3')),
+                      ],
+                      selected: {selected},
+                      onSelectionChanged: (s) =>
+                          setState(() => selected = s.first),
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    selected == 0
+                        ? 'Owulacja: pojedynczy przewidywany dzień.'
+                        : 'Owulacja: zakres $selected ${selected == 1 ? "dnia" : "dni"} w obie strony '
+                            '(${1 + selected * 2} dni razem).',
+                    style: Theme.of(sbContext).textTheme.bodySmall,
+                  ),
+                ],
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.of(dialogContext).pop(),
+                  child: const Text('Anuluj'),
+                ),
+                FilledButton(
+                  onPressed: () =>
+                      Navigator.of(dialogContext).pop(selected),
+                  child: const Text('Zapisz'),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+    if (picked == null || picked == person.ovulationUncertainty) return;
+    try {
+      await ref
+          .read(personRepositoryProvider)
+          .setOvulationUncertainty(person.id, picked);
+    } catch (e) {
+      if (context.mounted) {
+        _showError(context, 'Nie udało się zapisać: $e');
+      }
     }
   }
 

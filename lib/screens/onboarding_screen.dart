@@ -11,9 +11,18 @@ class OnboardingScreen extends ConsumerStatefulWidget {
 }
 
 class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
-  final _ctrl = TextEditingController();
+  late final TextEditingController _ctrl;
   bool _busy = false;
   String? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    // Pre-fill imię z Google account jeśli dostępne — user może je nadpisać.
+    final googleName = ref.read(authServiceProvider).googleName ?? '';
+    final firstName = googleName.split(' ').first;
+    _ctrl = TextEditingController(text: firstName);
+  }
 
   Future<void> _submit() async {
     final name = _ctrl.text.trim();

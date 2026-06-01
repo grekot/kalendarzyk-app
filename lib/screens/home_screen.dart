@@ -4,19 +4,21 @@ import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
-import 'package:path_provider/path_provider.dart';
-import 'package:share_plus/share_plus.dart';
+import 'package:package_info_plus/package_info_plus.dart';
 
 import '../data/cycle_repository.dart';
 import '../data/cycle_stats.dart';
+import '../data/update_checker.dart';
 import '../models/person.dart';
 import '../providers/providers.dart';
 import '../theme.dart';
 import '../widgets/add_cycle_start_dialog.dart';
+import '../widgets/backup_prompt.dart';
 import '../widgets/import_dialog.dart';
 import '../widgets/info_card.dart';
 import '../widgets/join_profile_dialog.dart';
 import '../widgets/person_avatar.dart';
+import '../widgets/update_dialog.dart';
 import 'calendar_screen.dart';
 import 'profiles_screen.dart';
 
@@ -28,7 +30,39 @@ class HomeScreen extends ConsumerStatefulWidget {
 }
 
 class _HomeScreenState extends ConsumerState<HomeScreen> {
-  bool _activeInitialized = false;
+  bool _updateChecked = false;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) => _checkForUpdate());
+  }
+
+  Future<void> _checkForUpdate() async {
+    if (_updateChecked) return;
+    _updateChecked = true;
+    final info = await UpdateChecker().checkForUpdate();
+    if (info == null || !mounted) return;
+    final messenger = ScaffoldMessenger.of(context);
+    messenger.showSnackBar(
+      SnackBar(
+        duration: const Duration(seconds: 8),
+        content: Text('Dostępna nowa wersja ${info.tag}'),
+        action: SnackBarAction(
+          label: 'Aktualizuj',
+          onPressed: () {
+            if (mounted) {
+              UpdateDialog.show(
+                context,
+                info: info,
+                checker: UpdateChecker(),
+              );
+            }
+          },
+        ),
+      ),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -36,6 +70,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
 
     final activePerson = ref.watch(activePersonProvider);
     final cyclesAsync = ref.watch(cyclesProvider);
+    final myId = ref.watch(currentUserIdProvider).valueOrNull;
+    final canEdit = activePerson?.canEdit(myId) ?? false;
     final today = dateOnly(DateTime.now());
     final fmtLong = DateFormat('d MMMM yyyy', 'pl_PL');
 
@@ -70,6 +106,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                   starts: starts,
                   today: today,
                   fmt: fmtLong,
+                  canEdit: canEdit,
                 ),
               ),
       ),
@@ -77,23 +114,22 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   }
 
   void _maybeInitActiveProfile() {
-    if (_activeInitialized) return;
+    // Jeśli aktywny profil jest już ustawiony — nic nie robimy.
+    if (ref.read(activePersonIdProvider) != null) return;
+
     final personsAsync = ref.watch(personsProvider);
     final defaultAsync = ref.watch(defaultProfileIdProvider);
     if (!personsAsync.hasValue || !defaultAsync.hasValue) return;
     final persons = personsAsync.value!;
+    // Brak profili — czekamy aż user doda / zaimportuje pierwszy.
+    if (persons.isEmpty) return;
+
     final defaultId = defaultAsync.value;
-    if (persons.isEmpty) {
-      _activeInitialized = true;
-      return;
-    }
-    final pick = (defaultId != null &&
-            persons.any((p) => p.id == defaultId))
+    final pick = (defaultId != null && persons.any((p) => p.id == defaultId))
         ? defaultId
         : persons.first.id;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       ref.read(activePersonIdProvider.notifier).state = pick;
-      setState(() => _activeInitialized = true);
     });
   }
 }
@@ -130,27 +166,85 @@ class _NoProfilesView extends StatelessWidget {
   }
 }
 
-class _HomeBody extends StatelessWidget {
+class _HomeBody extends ConsumerWidget {
   const _HomeBody({
     required this.starts,
     required this.today,
     required this.fmt,
+    required this.canEdit,
   });
 
   final List<DateTime> starts;
   final DateTime today;
   final DateFormat fmt;
+  final bool canEdit;
+
+  Future<void> _onAddPressed(BuildContext context, WidgetRef ref) async {
+    final addedDate = await AddCycleStartDialog.show(context);
+    if (addedDate == null || !context.mounted) return;
+    final activePerson = ref.read(activePersonProvider);
+    if (activePerson == null) return;
+    final shouldBackup = await BackupPrompt.askAfterCycleAdded(
+      context,
+      person: activePerson,
+      addedDate: addedDate,
+    );
+    if (shouldBackup && context.mounted) {
+      await BackupPrompt.exportProfile(context, ref, activePerson);
+    }
+  }
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final last = CycleStats.lastStart(starts);
     final avg = CycleStats.averageLengthDays(starts);
     final lengths = CycleStats.cycleLengths(starts);
     final predicted = CycleStats.predictedNextStart(starts);
+    final showFertility = ref.watch(showFertilityProvider);
+    final activePerson = ref.watch(activePersonProvider);
+    final uncert = activePerson?.ovulationUncertainty ??
+        Person.defaultOvulationUncertainty;
+    final fertileWindow = showFertility
+        ? CycleStats.predictedFertileWindow(
+            starts,
+            ovulationUncertainty: uncert,
+          )
+        : null;
+    final ovulationDay =
+        showFertility ? CycleStats.predictedOvulationDay(starts) : null;
+    final ovulationWindow = showFertility
+        ? CycleStats.predictedOvulationWindow(
+            starts,
+            ovulationUncertainty: uncert,
+          )
+        : null;
 
     return ListView(
       padding: const EdgeInsets.symmetric(vertical: 12),
       children: [
+        if (!canEdit)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
+            child: Card(
+              color: Theme.of(context).colorScheme.surfaceContainerHighest,
+              child: Padding(
+                padding: const EdgeInsets.all(12),
+                child: Row(
+                  children: [
+                    Icon(Icons.visibility,
+                        size: 18,
+                        color: Theme.of(context).colorScheme.onSurfaceVariant),
+                    const SizedBox(width: 8),
+                    const Expanded(
+                      child: Text(
+                        'Tylko podgląd — właściciel nie dał Ci prawa edycji cykli.',
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
         InfoCard(
           title: 'Ostatni cykl',
           icon: Icons.water_drop,
@@ -173,6 +267,24 @@ class _HomeBody extends StatelessWidget {
                   fmt: fmt,
                 ),
         ),
+        if (showFertility)
+          InfoCard(
+            title: 'Okno płodne',
+            icon: Icons.local_florist,
+            iconColor: CycleColors.ovulation,
+            child: fertileWindow == null
+                ? const Text('Potrzeba min. 2 wpisów żeby policzyć okno.')
+                : _FertileWindowBody(
+                    start: fertileWindow.start,
+                    end: fertileWindow.end,
+                    ovulation: ovulationDay!,
+                    ovulationStart: ovulationWindow!.start,
+                    ovulationEnd: ovulationWindow.end,
+                    uncertainty: uncert,
+                    today: today,
+                    fmt: fmt,
+                  ),
+          ),
         const SizedBox(height: 16),
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 12),
@@ -183,7 +295,7 @@ class _HomeBody extends StatelessWidget {
             ),
             icon: const Icon(Icons.water_drop),
             label: const Text('Dodaj początek menstruacji'),
-            onPressed: () => AddCycleStartDialog.show(context),
+            onPressed: canEdit ? () => _onAddPressed(context, ref) : null,
           ),
         ),
         const SizedBox(height: 12),
@@ -278,6 +390,88 @@ class _PredictedBody extends StatelessWidget {
     if (n == 1) return 'cyklu';
     return 'cykli';
   }
+}
+
+class _FertileWindowBody extends StatelessWidget {
+  const _FertileWindowBody({
+    required this.start,
+    required this.end,
+    required this.ovulation,
+    required this.ovulationStart,
+    required this.ovulationEnd,
+    required this.uncertainty,
+    required this.today,
+    required this.fmt,
+  });
+
+  final DateTime start;
+  final DateTime end;
+  final DateTime ovulation;
+  final DateTime ovulationStart;
+  final DateTime ovulationEnd;
+  final int uncertainty;
+  final DateTime today;
+  final DateFormat fmt;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final fmtShort = DateFormat('d MMM', 'pl_PL');
+    final inWindow = !today.isBefore(_dateOnly(start)) &&
+        !today.isAfter(_dateOnly(end));
+    final isPast = today.isAfter(_dateOnly(end));
+    final daysToOvulation = _dateOnly(ovulation).difference(today).inDays;
+
+    String status;
+    if (isPast) {
+      status = 'Minęło — następne po kolejnej miesiączce.';
+    } else if (inWindow) {
+      if (daysToOvulation == 0) {
+        status = 'Trwa — dziś szczyt owulacji.';
+      } else if (daysToOvulation > 0) {
+        status = daysToOvulation == 1
+            ? 'Trwa — owulacja jutro.'
+            : 'Trwa — owulacja za $daysToOvulation dni.';
+      } else {
+        status = 'Trwa — po owulacji.';
+      }
+    } else {
+      final daysToStart = _dateOnly(start).difference(today).inDays;
+      status = daysToStart == 1
+          ? 'Zacznie się jutro.'
+          : 'Zacznie się za $daysToStart dni.';
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          '${fmtShort.format(start)} – ${fmt.format(end)}',
+          style: theme.textTheme.titleMedium,
+        ),
+        const SizedBox(height: 2),
+        Text(status, style: theme.textTheme.bodyMedium),
+        const SizedBox(height: 4),
+        Text(
+          uncertainty == 0
+              ? 'Owulacja: ${fmtShort.format(ovulation)}'
+              : 'Owulacja: ${fmtShort.format(ovulationStart)} – '
+                  '${fmtShort.format(ovulationEnd)} (szczyt ${fmtShort.format(ovulation)}, ±$uncertainty ${uncertainty == 1 ? "dzień" : "dni"})',
+          style: theme.textTheme.bodySmall,
+        ),
+        const SizedBox(height: 6),
+        Text(
+          'Przewidywania orientacyjne. Nie zastępują metod planowania rodziny.',
+          style: theme.textTheme.bodySmall?.copyWith(
+            color: theme.colorScheme.onSurfaceVariant,
+            fontStyle: FontStyle.italic,
+          ),
+        ),
+      ],
+    );
+  }
+
+  DateTime _dateOnly(DateTime d) => DateTime(d.year, d.month, d.day);
 }
 
 // ────────────────────────────────────────────────────────────────
@@ -412,11 +606,39 @@ class _HomeDrawer extends ConsumerWidget {
               },
             ),
             const Divider(),
-            const ListTile(
-              leading: Icon(Icons.info_outline),
-              title: Text('O aplikacji'),
-              subtitle: Text('Tracker cyklu menstruacyjnego'),
+            ListTile(
+              leading: const Icon(Icons.logout),
+              title: const Text('Wyloguj'),
+              subtitle: const Text('Zakończ sesję Google'),
+              onTap: () async {
+                final ok = await showDialog<bool>(
+                  context: context,
+                  builder: (dialogContext) => AlertDialog(
+                    title: const Text('Wylogować?'),
+                    content: const Text(
+                      'Stracisz dostęp do danych w chmurze do czasu '
+                      'ponownego zalogowania tym samym kontem Google.',
+                    ),
+                    actions: [
+                      TextButton(
+                        onPressed: () => Navigator.of(dialogContext).pop(false),
+                        child: const Text('Anuluj'),
+                      ),
+                      FilledButton(
+                        onPressed: () => Navigator.of(dialogContext).pop(true),
+                        child: const Text('Wyloguj'),
+                      ),
+                    ],
+                  ),
+                );
+                if (ok == true) {
+                  await ref.read(authServiceProvider).signOut();
+                  // AuthGate sam przerenderuje na SignInScreen.
+                }
+              },
             ),
+            const Divider(),
+            const _AboutTile(),
           ],
         ),
       ),
@@ -424,53 +646,12 @@ class _HomeDrawer extends ConsumerWidget {
   }
 
   Future<void> _exportData(BuildContext context, WidgetRef ref) async {
-    try {
-      final persons = ref.read(personsProvider).valueOrNull ?? [];
-      if (persons.isEmpty) return;
-      final activeId = ref.read(activePersonIdProvider);
-      final chosen = await _pickPersonForExport(context, persons, activeId);
-      if (chosen == null) return;
-
-      final repo = ref.read(cycleRepositoryProvider);
-      final jsonStr = await repo.exportJson(chosen.id, personName: chosen.name);
-      final stamp = DateFormat('yyyy-MM-dd').format(DateTime.now());
-      final safeName = chosen.name
-          .toLowerCase()
-          .replaceAll(RegExp(r'[^a-z0-9]+'), '_')
-          .replaceAll(RegExp(r'^_|_$'), '');
-      final fileName =
-          'kalendazyk_${safeName.isEmpty ? "profil" : safeName}_$stamp.json';
-
-      if (Platform.isAndroid || Platform.isIOS) {
-        final dir = await getTemporaryDirectory();
-        final file = File('${dir.path}/$fileName');
-        await file.writeAsString(jsonStr);
-        await Share.shareXFiles(
-          [XFile(file.path, mimeType: 'application/json')],
-          subject: 'Kalendarzyk — kopia zapasowa (${chosen.name})',
-        );
-      } else {
-        final path = await FilePicker.platform.saveFile(
-          dialogTitle: 'Zapisz kopię zapasową — ${chosen.name}',
-          fileName: fileName,
-          type: FileType.custom,
-          allowedExtensions: const ['json'],
-        );
-        if (path == null) return;
-        await File(path).writeAsString(jsonStr);
-        if (context.mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('Zapisano: $path')),
-          );
-        }
-      }
-    } catch (e) {
-      if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Błąd eksportu: $e')),
-        );
-      }
-    }
+    final persons = ref.read(personsProvider).valueOrNull ?? [];
+    if (persons.isEmpty) return;
+    final activeId = ref.read(activePersonIdProvider);
+    final chosen = await _pickPersonForExport(context, persons, activeId);
+    if (chosen == null || !context.mounted) return;
+    await BackupPrompt.exportProfile(context, ref, chosen);
   }
 
   Future<Person?> _pickPersonForExport(
@@ -698,6 +879,29 @@ class _PersonSwitcherButton extends ConsumerWidget {
             ),
           ),
         ];
+      },
+    );
+  }
+}
+
+/// ListTile pokazujący wersję apki — dynamicznie pobiera z pubspec
+/// przez package_info_plus.
+class _AboutTile extends StatelessWidget {
+  const _AboutTile();
+
+  @override
+  Widget build(BuildContext context) {
+    return FutureBuilder<PackageInfo>(
+      future: PackageInfo.fromPlatform(),
+      builder: (context, snap) {
+        final version = snap.data == null
+            ? '…'
+            : '${snap.data!.version} (build ${snap.data!.buildNumber})';
+        return ListTile(
+          leading: const Icon(Icons.info_outline),
+          title: const Text('O aplikacji'),
+          subtitle: Text('Kalendarzyk $version'),
+        );
       },
     );
   }
