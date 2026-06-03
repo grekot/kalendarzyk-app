@@ -16,6 +16,11 @@ od MAJOR/MINOR/PATCH).
 
 _Pusto._
 
+## [1.1.3+5] - 2026-06-03
+
+### Naprawione
+- **Layout w ProfilesScreen** — gdy nazwa profilu była długa, 4-5 ikon w `trailing` rozpierało wiersz tak, że nazwa łamała się literka po literce w pionie. Zastąpione **PopupMenuButton (kebab `⋮`)** ze wszystkimi akcjami pod jedną ikoną. Nazwa profilu dostaje pełną szerokość z `TextOverflow.ellipsis`. Gwiazdka (default) pokazuje się jako wizualny indikator w title.
+
 ## [1.1.2+4] - 2026-06-03
 
 ### Naprawione

@@ -49,6 +49,9 @@ class ProfilesScreen extends ConsumerWidget {
                 final p = persons[i];
                 final mine = p.isOwnedBy(currentUserId);
                 final isDefault = p.id == defaultId;
+                final theme = Theme.of(context);
+                final canDelete = mine && persons.length > 1;
+
                 return ListTile(
                   leading: GestureDetector(
                     onTap: mine ? () => _changePhoto(context, ref, p) : null,
@@ -62,10 +65,10 @@ class ProfilesScreen extends ConsumerWidget {
                             bottom: -2,
                             child: Container(
                               decoration: BoxDecoration(
-                                color: Theme.of(context).colorScheme.surface,
+                                color: theme.colorScheme.surface,
                                 shape: BoxShape.circle,
                                 border: Border.all(
-                                  color: Theme.of(context).colorScheme.outlineVariant,
+                                  color: theme.colorScheme.outlineVariant,
                                   width: 1,
                                 ),
                               ),
@@ -73,71 +76,105 @@ class ProfilesScreen extends ConsumerWidget {
                               child: Icon(
                                 Icons.photo_camera,
                                 size: 12,
-                                color: Theme.of(context).colorScheme.onSurfaceVariant,
+                                color: theme.colorScheme.onSurfaceVariant,
                               ),
                             ),
                           ),
                       ],
                     ),
                   ),
-                  title: Text(p.name),
-                  subtitle: mine
-                      ? (isDefault ? const Text('Domyślna') : null)
-                      : Text('udostępnione przez ${p.ownerName}'),
-                  trailing: Row(
-                    mainAxisSize: MainAxisSize.min,
+                  title: Row(
                     children: [
-                      IconButton(
-                        tooltip: isDefault ? 'Domyślna' : 'Ustaw jako domyślną',
-                        icon: Icon(isDefault ? Icons.star : Icons.star_border),
-                        onPressed: isDefault
-                            ? null
-                            : () async {
-                                await ref
-                                    .read(authServiceProvider)
-                                    .setDefaultProfileId(p.id);
-                                ref.invalidate(defaultProfileIdProvider);
-                              },
+                      Expanded(
+                        child: Text(
+                          p.name,
+                          overflow: TextOverflow.ellipsis,
+                          maxLines: 1,
+                        ),
                       ),
-                      if (mine) ...[
-                        IconButton(
-                          tooltip:
-                              'Margines błędu owulacji (±${p.ovulationUncertainty} ${p.ovulationUncertainty == 1 ? "dzień" : "dni"})',
-                          icon: const Icon(Icons.tune),
-                          onPressed: () =>
-                              _changeUncertainty(context, ref, p),
-                        ),
-                        IconButton(
-                          tooltip: 'Udostępnij',
-                          icon: const Icon(Icons.share_outlined),
-                          onPressed: () {
-                            Navigator.of(context).push(
-                              MaterialPageRoute(
-                                builder: (_) =>
-                                    ProfileShareScreen(profile: p),
-                              ),
-                            );
-                          },
-                        ),
-                        IconButton(
-                          tooltip: 'Zmień nazwę',
-                          icon: const Icon(Icons.edit_outlined),
-                          onPressed: () => _renamePerson(context, ref, p),
-                        ),
-                        IconButton(
-                          tooltip: 'Usuń profil',
-                          icon: const Icon(Icons.delete_outline),
-                          onPressed: () =>
-                              _deletePerson(context, ref, p, activeId),
-                        ),
-                      ] else
-                        IconButton(
-                          tooltip: 'Opuść udostępniony profil',
-                          icon: const Icon(Icons.exit_to_app),
-                          onPressed: () =>
-                              _leaveShared(context, ref, p, activeId),
+                      if (isDefault)
+                        Padding(
+                          padding: const EdgeInsets.only(left: 4),
+                          child: Icon(
+                            Icons.star,
+                            size: 18,
+                            color: theme.colorScheme.primary,
+                          ),
                         ),
                     ],
+                  ),
+                  subtitle: mine
+                      ? (isDefault ? const Text('Domyślna') : null)
+                      : Text(
+                          'udostępnione przez ${p.ownerName}',
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                  trailing: PopupMenuButton<_ProfileAction>(
+                    tooltip: 'Akcje',
+                    icon: const Icon(Icons.more_vert),
+                    onSelected: (action) => _handleAction(
+                      context,
+                      ref,
+                      action,
+                      p,
+                      activeId,
+                    ),
+                    itemBuilder: (_) {
+                      final items = <PopupMenuEntry<_ProfileAction>>[];
+                      if (!isDefault) {
+                        items.add(_menuItem(
+                          _ProfileAction.setDefault,
+                          Icons.star_border,
+                          'Ustaw jako domyślną',
+                        ));
+                      }
+                      if (mine) {
+                        items.add(_menuItem(
+                          _ProfileAction.share,
+                          Icons.share_outlined,
+                          'Udostępnij',
+                        ));
+                        items.add(_menuItem(
+                          _ProfileAction.rename,
+                          Icons.edit_outlined,
+                          'Zmień nazwę',
+                        ));
+                        items.add(_menuItem(
+                          _ProfileAction.tune,
+                          Icons.tune,
+                          'Margines owulacji (±${p.ovulationUncertainty})',
+                        ));
+                        if (canDelete) {
+                          items.add(const PopupMenuDivider());
+                          items.add(PopupMenuItem(
+                            value: _ProfileAction.delete,
+                            child: Row(
+                              children: [
+                                Icon(
+                                  Icons.delete_outline,
+                                  size: 18,
+                                  color: theme.colorScheme.error,
+                                ),
+                                const SizedBox(width: 12),
+                                Text(
+                                  'Usuń profil',
+                                  style: TextStyle(
+                                    color: theme.colorScheme.error,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ));
+                        }
+                      } else {
+                        items.add(_menuItem(
+                          _ProfileAction.leave,
+                          Icons.exit_to_app,
+                          'Opuść udostępniony profil',
+                        ));
+                      }
+                      return items;
+                    },
                   ),
                 );
               },
@@ -146,6 +183,34 @@ class ProfilesScreen extends ConsumerWidget {
         ),
       ),
     );
+  }
+
+  Future<void> _handleAction(
+    BuildContext context,
+    WidgetRef ref,
+    _ProfileAction action,
+    Person person,
+    String? activeId,
+  ) async {
+    switch (action) {
+      case _ProfileAction.setDefault:
+        await ref.read(authServiceProvider).setDefaultProfileId(person.id);
+        ref.invalidate(defaultProfileIdProvider);
+      case _ProfileAction.share:
+        await Navigator.of(context).push(
+          MaterialPageRoute(
+            builder: (_) => ProfileShareScreen(profile: person),
+          ),
+        );
+      case _ProfileAction.rename:
+        await _renamePerson(context, ref, person);
+      case _ProfileAction.tune:
+        await _changeUncertainty(context, ref, person);
+      case _ProfileAction.delete:
+        await _deletePerson(context, ref, person, activeId);
+      case _ProfileAction.leave:
+        await _leaveShared(context, ref, person, activeId);
+    }
   }
 
   Future<void> _addPerson(BuildContext context, WidgetRef ref) async {
@@ -441,3 +506,22 @@ class ProfilesScreen extends ConsumerWidget {
 }
 
 enum _PhotoAction { pick, remove }
+
+enum _ProfileAction { setDefault, share, rename, tune, delete, leave }
+
+PopupMenuItem<_ProfileAction> _menuItem(
+  _ProfileAction value,
+  IconData icon,
+  String label,
+) {
+  return PopupMenuItem<_ProfileAction>(
+    value: value,
+    child: Row(
+      children: [
+        Icon(icon, size: 18),
+        const SizedBox(width: 12),
+        Expanded(child: Text(label, overflow: TextOverflow.ellipsis)),
+      ],
+    ),
+  );
+}
