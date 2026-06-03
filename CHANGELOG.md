@@ -14,7 +14,12 @@ od MAJOR/MINOR/PATCH).
 
 ## [Unreleased]
 
-_Pusto — wszystko z bieżącej iteracji zostało wydane jako 1.1.0+2._
+_Pusto._
+
+## [1.1.1+3] - 2026-06-03
+
+### Zmienione
+- Bump wersji do **1.1.1+3** w celu zweryfikowania pełnej ścieżki auto-update: GitHub Actions → release → wykrycie nowej wersji w apce → pobranie APK → instalacja przez systemowy installer. Brak innych zmian w kodzie.
 
 ## [1.1.0+2] - 2026-06-01
 
