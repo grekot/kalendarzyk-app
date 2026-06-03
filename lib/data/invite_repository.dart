@@ -38,33 +38,37 @@ class InviteRepository {
     throw StateError('Nie udało się wygenerować unikalnego kodu.');
   }
 
-  /// Realizuje invite — dopisuje bieżącego usera do profile_shares z rolą z invite
-  /// i kasuje invite. Zwraca id profilu.
+  /// Realizuje invite atomicznie przez RPC `redeem_invite` (SECURITY DEFINER):
+  /// sprawdza expiry, wstawia bieżącego usera do profile_shares z rolą z invite,
+  /// kasuje invite. Zwraca id profilu.
   Future<String> redeemInvite(String code) async {
-    final userId = _client.auth.currentUser?.id;
-    if (userId == null) throw StateError('Brak zalogowanego użytkownika.');
+    if (_client.auth.currentUser == null) {
+      throw StateError('Brak zalogowanego użytkownika.');
+    }
     final cleaned = code.replaceAll(RegExp(r'\s+'), '').toUpperCase();
-    final row = await _client
-        .from('invites')
-        .select('profile_id, expires_at, role')
-        .eq('code', cleaned)
-        .maybeSingle();
-    if (row == null) {
-      throw const FormatException('Nieprawidłowy kod.');
+    try {
+      final result = await _client.rpc(
+        'redeem_invite',
+        params: {'p_code': cleaned},
+      );
+      if (result == null) {
+        throw const FormatException('Nieprawidłowy kod.');
+      }
+      return result.toString();
+    } on PostgrestException catch (e) {
+      // SQLSTATE z funkcji: P0001 invalid_code, P0002 expired_code, 28000 not_authenticated
+      final msg = e.message;
+      if (msg.contains('invalid_code')) {
+        throw const FormatException('Nieprawidłowy kod.');
+      }
+      if (msg.contains('expired_code')) {
+        throw const FormatException('Kod wygasł. Poproś o nowy.');
+      }
+      if (msg.contains('not_authenticated')) {
+        throw StateError('Brak zalogowanego użytkownika.');
+      }
+      rethrow;
     }
-    final expiresAt = DateTime.parse(row['expires_at'] as String);
-    if (DateTime.now().toUtc().isAfter(expiresAt)) {
-      throw const FormatException('Kod wygasł. Poproś o nowy.');
-    }
-    final profileId = row['profile_id'] as String;
-    final role = Person.parseRole(row['role'] as String?) ?? ShareRole.editor;
-    await _client.from('profile_shares').upsert({
-      'profile_id': profileId,
-      'user_id': userId,
-      'role': Person.roleToSql(role),
-    });
-    await _client.from('invites').delete().eq('code', cleaned);
-    return profileId;
   }
 
   String _generateCode() {

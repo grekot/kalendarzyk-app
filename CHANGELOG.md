@@ -16,6 +16,14 @@ od MAJOR/MINOR/PATCH).
 
 _Pusto._
 
+## [1.1.2+4] - 2026-06-03
+
+### Naprawione
+- **Realizacja kodu udostępnienia profilu** — RLS policy `shares_insert` blokowała wstawienie wiersza przez usera realizującego kod (nie był ownerem). Wprowadzona funkcja `public.redeem_invite(text)` z `SECURITY DEFINER` — bypassuje RLS, atomicznie sprawdza expiry, wstawia share i kasuje invite. Klient woła RPC zamiast 3 osobnych queries (eliminuje race condition).
+
+### Migracje SQL
+- `005_redeem_invite_rpc.sql` — funkcja `redeem_invite(text) returns uuid` + grant execute dla `authenticated`.
+
 ## [1.1.1+3] - 2026-06-03
 
 ### Zmienione
