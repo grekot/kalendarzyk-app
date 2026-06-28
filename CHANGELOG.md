@@ -14,7 +14,8 @@ od MAJOR/MINOR/PATCH).
 
 ## [Unreleased]
 
-_Pusto._
+### Naprawione
+- **Keep-alive Supabase** — workflow pingował `/auth/v1/settings`, ale Supabase liczy 7-dniową nieaktywność tylko dla zapytań do bazy (PostgREST). Zmiana na `/rest/v1/profiles?select=id&limit=1` — RLS odfiltruje wiersze dla anon do pustej listy, ale samo zapytanie liczy się jako activity. (Bez wpływu na APK — tylko CI.)
 
 ## [1.1.3+5] - 2026-06-03
 
