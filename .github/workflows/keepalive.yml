@@ -1,7 +1,9 @@
 name: Supabase keep-alive
 
-# Free tier Supabase auto-pauzuje projekt po 7 dniach bez aktywności.
-# Ten workflow codziennie pinguje REST endpoint, żeby reset 7-dniowy licznik.
+# Free tier Supabase auto-pauzuje projekt po 7 dniach bez aktywności BAZY.
+# Auth endpointy (/auth/v1/*) NIE liczą się jako activity — trzeba zapytanie
+# do PostgREST. Pingujemy `/rest/v1/profiles?select=id&limit=1` (RLS i tak
+# odfiltruje wiersze do pustej listy dla anon key, ale zapytanie dotyka bazy).
 # Job failuje gdy odpowiedź ≠ 200 — wtedy GitHub wyśle maila o failed workflow.
 
 on:
@@ -13,7 +15,7 @@ jobs:
   ping:
     runs-on: ubuntu-latest
     steps:
-      - name: Ping Supabase auth settings
+      - name: Ping Supabase PostgREST
         env:
           SUPABASE_URL: https://tkvxeozttwxxfpvmvvwp.supabase.co
           SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
@@ -23,9 +25,8 @@ jobs:
             exit 1
           fi
           echo "Key length: ${#SUPABASE_ANON_KEY}"
-          echo "Key prefix: ${SUPABASE_ANON_KEY:0:10}..."
           code=$(curl -s -o /tmp/body -w '%{http_code}' \
-            "$SUPABASE_URL/auth/v1/settings" \
+            "$SUPABASE_URL/rest/v1/profiles?select=id&limit=1" \
             -H "apikey: $SUPABASE_ANON_KEY" \
             -H "Authorization: Bearer $SUPABASE_ANON_KEY")
           echo "HTTP $code"
@@ -36,4 +37,4 @@ jobs:
             echo "Unexpected status, failing job"
             exit 1
           fi
-          echo "OK — Supabase active"
+          echo "OK — PostgREST hit, baza aktywna"
