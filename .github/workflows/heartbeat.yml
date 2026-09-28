@@ -11,6 +11,9 @@ on:
   schedule:
     - cron: '0 3 1 * *'    # 1-szy dzień miesiąca, 3:00 UTC
   workflow_dispatch:        # ręczny trigger z Actions UI
+  push:                     # także przy edycji samego pliku — self-test przy zmianach
+    paths:
+      - '.github/workflows/heartbeat.yml'
 
 permissions:
   contents: write
