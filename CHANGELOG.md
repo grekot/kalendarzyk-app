@@ -17,6 +17,9 @@ od MAJOR/MINOR/PATCH).
 ### Naprawione
 - **Keep-alive Supabase** — workflow pingował `/auth/v1/settings`, ale Supabase liczy 7-dniową nieaktywność tylko dla zapytań do bazy (PostgREST). Zmiana na `/rest/v1/profiles?select=id&limit=1` — RLS odfiltruje wiersze dla anon do pustej listy, ale samo zapytanie liczy się jako activity. (Bez wpływu na APK — tylko CI.)
 
+### Dodane
+- **Repo heartbeat workflow** — dorzucony `.github/workflows/heartbeat.yml`. Odpala się 1-szego każdego miesiąca i robi pusty commit (`chore(ci): heartbeat …`) **tylko gdy** ostatni commit był ponad 25 dni temu. Utrzymuje repo w stanie „active" wg GitHub Actions — bez tego scheduled workflowy (m.in. keep-alive Supabase) były uśpione po ~2.5 miesiąca ciszy, co doprowadziło do auto-pauzy Supabase we wrześniu 2026. (Bez wpływu na APK — tylko CI.)
+
 ## [1.1.3+5] - 2026-06-03
 
 ### Naprawione

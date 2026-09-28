@@ -1,0 +1,53 @@
+name: Repo heartbeat
+
+# Utrzymuje repo w stanie "aktywnym" dla GitHub Actions — bez tego scheduled
+# workflowy (keep-alive Supabase) są uśpione po ~60 dniach bez commitów.
+#
+# Odpala się 1-szego każdego miesiąca. Robi pusty commit TYLKO gdy ostatni
+# faktyczny commit był ponad 25 dni temu — jeśli iterujemy w apce, heartbeat
+# w ogóle nie zapisuje niczego (żeby nie zaśmiecać historii).
+
+on:
+  schedule:
+    - cron: '0 3 1 * *'    # 1-szy dzień miesiąca, 3:00 UTC
+  workflow_dispatch:        # ręczny trigger z Actions UI
+
+permissions:
+  contents: write
+
+jobs:
+  heartbeat:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          fetch-depth: 0    # potrzebne żeby zobaczyć historię commitów
+
+      - name: Sprawdź wiek ostatniego commitu
+        id: age
+        run: |
+          LAST=$(git log -1 --format=%ct)
+          NOW=$(date +%s)
+          AGE_DAYS=$(( (NOW - LAST) / 86400 ))
+          echo "Ostatni commit był $AGE_DAYS dni temu."
+          if [ "$AGE_DAYS" -lt 25 ]; then
+            echo "Repo aktywne — pomijam heartbeat."
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "Repo zamiera — dorzucam pusty commit."
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Zapisz heartbeat
+        if: steps.age.outputs.skip != 'true'
+        run: |
+          git config user.name "kalendarzyk-heartbeat[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit --allow-empty -m "chore(ci): heartbeat $(date -u +%Y-%m-%d)
+
+Automatyczny pusty commit żeby GitHub Actions nie uśpił scheduled workflow-ów
+(keep-alive Supabase). Nie modyfikuje kodu apki. Ostatni faktyczny commit
+był ponad 25 dni temu — dlatego dorzucam sztuczny wpis do historii."
+          git push
