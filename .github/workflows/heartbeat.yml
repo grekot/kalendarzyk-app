@@ -48,9 +48,7 @@ jobs:
         run: |
           git config user.name "kalendarzyk-heartbeat[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git commit --allow-empty -m "chore(ci): heartbeat $(date -u +%Y-%m-%d)
-
-Automatyczny pusty commit żeby GitHub Actions nie uśpił scheduled workflow-ów
-(keep-alive Supabase). Nie modyfikuje kodu apki. Ostatni faktyczny commit
-był ponad 25 dni temu — dlatego dorzucam sztuczny wpis do historii."
+          git commit --allow-empty \
+            -m "chore(ci): heartbeat $(date -u +%Y-%m-%d)" \
+            -m "Automatyczny pusty commit żeby GitHub Actions nie uśpił scheduled workflow-ów (keep-alive Supabase). Nie modyfikuje kodu apki. Ostatni faktyczny commit był ponad 25 dni temu — dlatego dorzucam sztuczny wpis do historii."
           git push
